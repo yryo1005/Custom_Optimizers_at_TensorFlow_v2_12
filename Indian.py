@@ -1,6 +1,6 @@
 from tensorflow.keras import optimizers
 
-class Inidian(optimizers.Optimizer):
+class Indian(optimizers.Optimizer):
     """
         iterative fomula of Indian is 
             w = w + lr * ( (1/beta - alpha) * w - 1/beta * z - beta * g )
