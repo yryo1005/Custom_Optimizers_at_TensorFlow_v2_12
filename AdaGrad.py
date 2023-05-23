@@ -1,4 +1,11 @@
 class AdaGrad(optimizers.Optimizer):
+    """
+        iterative fomula of AdaGrad is 
+            h = h + g ** 2
+            w = w - lr * g / (h) ** (1 / 2)
+            
+        where, w : parameter, g : gradient, lr : learning rate
+    """
     def __init__(self, learning_rate = 0.001, name = "AdaGrad"):
         super().__init__(name = name)
 
