@@ -1,3 +1,5 @@
+from tensorflow.keras import optimizers
+
 class AdaGrad(optimizers.Optimizer):
     """
         iterative fomula of AdaGrad is 
