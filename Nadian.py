@@ -1,60 +1,48 @@
 from tensorflow.keras import optimizers
 
 class Nadian(optimizers.Optimizer):
-    """
-        iterative fomula of Nadian is 
-            w = w + lr * ( (1/beta - alpha) * w - 1/beta * z - beta * n_g )
-            z = z + lr * ( (1/beta - alpha) * w - 1/beta * z )
-            
-        where, w : parameter, n_g : nesterov gradient(dE/d(w + mu * v)), v : increase in w
-               lr : learning rate, mu : momentum, aplha : hyper parameter, beta : hyper parameter
-    """
-    def __init__(self, learning_rate = 0.001, alpha = 1.0, beta = 1.5, mu = 0.9, name = "Nadian"):
+    def __init__(self, learning_rate = 0.01, mu = 0.9, alpha = 0.5, beta = 0.1, name = "Nadian"):
         super().__init__(name = name)
-
+        # 学習率の設定には _build_learning_rate 関数を用いる
         self._learning_rate = self._build_learning_rate(learning_rate)
+        self._mu = mu
         self._alpha = alpha
         self._beta = beta
-        self._mu = mu
-
     
+    # build 関数は保持する変数を定義する関数
     def build(self, var_list):
-        ###
+        
         super().build(var_list)
+        # build 関数はイテレーション毎に呼び出されるので, 初めの1度のみ処理されるようにする
         if hasattr(self, "_built") and self._built:
             return
         self._built = True
-        ###
-        
+
+        # 
         self._y = list()
-        # 更新前のパラメータを保持する変数
-        self._tmp_variable = list()
         # 1イテレーション前のパラメータを保持する変数
-        self._past_variable = list()
-        for var in var_list:
-            # 初期値は0で設定される
+        self._past_variables = list()
+        for variable in var_list:
             self._y.append(
                 self.add_variable_from_reference(
-                    model_variable = var, variable_name = "y"
+                    model_variable = variable, variable_name = "y",
+                    # 初期値は0
+                    initial_value = tf.zeros(shape = variable.shape)
                 )
             )
-            # 初期値は0で設定される
-            self._tmp_variable.append(
+            self._past_variables.append(
                 self.add_variable_from_reference(
-                    model_variable = var, variable_name = "tmp_variable"
-                )
-            )
-            # 初期値をパラメータと同じにする
-            self._past_variable.append(
-                self.add_variable_from_reference(
-                    model_variable = var, variable_name = "past_variable",
-                    initial_value = var
+                    model_variable = variable, variable_name = "past_variable",
+                    # 初期値はパラメータと同じ
+                    initial_value = variable
                 )
             )
     
     # ネステロフの加速勾配を求めるように編集
     def compute_gradients(self, loss, var_list, tape=None):
+        # build関数を呼び出さないと保持する変数が定義されないので, ここで呼び出し
         self.build(var_list)
+
         if not callable(loss) and tape is None:
             raise ValueError(
                 "`tape` is required when a `Tensor` loss is passed. "
@@ -71,38 +59,44 @@ class Nadian(optimizers.Optimizer):
                     var_list = var_list()
         
         # ネステロフの加速勾配の形にパラメータを変更
+        tmp_variables = list()
         for variable in var_list:
             var_key = self._var_key(variable)
-            tmp_variable = self._tmp_variable[self._index_dict[var_key]]
-            past_variable = self._past_variable[self._index_dict[var_key]]
+            past_variable = self._past_variables[self._index_dict[var_key]]
+            mu = tf.cast(self._mu, variable.dtype)
 
             # 今のパラメータを保持
-            tmp_variable.assign(variable)
+            tmp_variables.append( variable.value() )
             # パラメータをネステロフの加速勾配の形に変更
-            variable.assign(variable + self._mu * (variable - past_variable))
+            variable.assign(variable + mu * (variable - past_variable))
 
         # ネステロフの加速勾配    
         grads = tape.gradient(loss, var_list)
 
         # パラメータを元の形に変更
-        for variable in var_list:
-            var_key = self._var_key(variable)
-            tmp_variable = self._tmp_variable[self._index_dict[var_key]]
-
+        for variable, tmp_variable in zip(var_list, tmp_variables):
             variable.assign(tmp_variable)
 
         return list(zip(grads, var_list))
     
     def update_step(self, gradient, variable):
-        var_key = self._var_key(variable)
-        y = self._y[self._index_dict[var_key]]
-        tmp_variable = self._tmp_variable[self._index_dict[var_key]]
-        past_variable = self._past_variable[self._index_dict[var_key]]
+        # ハイパーパラメータはパラメータと同じデータ型にキャストする
+        learning_rate = tf.cast(self._learning_rate, variable.dtype)
+        alpha = tf.cast(self._alpha, variable.dtype)
+        beta = tf.cast(self._beta, variable.dtype)
 
-        # 現在のパラメータを保持
-        past_variable.assign(variable)
-        # パラメータを保持
-        tmp_variable.assign(variable)
-        # zを更新
-        variable.assign(variable + self._learning_rate * ( (1 / self._beta - self._alpha) *  variable - 1 / self._beta * y - self._beta * gradient) )
-        y.assign(y + self._learning_rate * ( (1 / self._beta - self._alpha) *  variable - 1 / self._beta * y ) )
+        # 保持する変数を取得するためのキー
+        var_key = self._var_key(variable)
+
+        # yを取得
+        y = self._y[self._index_dict[var_key]]
+        past_variable = self._past_variables[self._index_dict[var_key]]
+        
+        # 更新前のパラメータを保持
+        tmp_variable = variable.value()
+        # パラメータは assign 関数で更新する
+        variable.assign( variable + learning_rate * ( ((1/beta) - alpha) * variable - (1/beta) * y - beta * gradient ) )
+        # yを更新
+        y.assign( y + learning_rate * ( ((1/beta) - alpha) * tmp_variable - (1/beta) * y ) )
+        # 1イテレーション前のパラメータを更新
+        past_variable.assign( tmp_variable )
