@@ -1,3 +1,4 @@
+import tensorflow as tf
 from tensorflow.keras import optimizers
 
 class Nadian(optimizers.Optimizer):
