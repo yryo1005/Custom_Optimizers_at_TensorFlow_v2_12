@@ -40,10 +40,13 @@ class Indian(optimizers.Optimizer):
 
         # yを取得
         y = self._y[self._index_dict[var_key]]
+        tmp_y = tf.where(self.iterations == 0, 
+                         (1/beta - alpha) * variable - beta * beta * gradient, 
+                         y)
         
         # 更新前のパラメータを保持
         tmp_variable = variable.value()
         # パラメータは assign 関数で更新する
-        variable.assign( variable + learning_rate * ( ((1/beta) - alpha) * variable - (1/beta) * y - beta * gradient ) )
+        variable.assign( variable + learning_rate * ( ((1/beta) - alpha) * variable - (1/beta) * tmp_y - beta * gradient ) )
         # yを更新
-        y.assign( y + learning_rate * ( ((1/beta) - alpha) * tmp_variable - (1/beta) * y ) )
+        y.assign( tmp_y + learning_rate * ( ((1/beta) - alpha) * tmp_variable - (1/beta) * tmp_y ) )
